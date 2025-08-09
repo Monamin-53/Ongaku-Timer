@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音学Timer</title>
+    
+    <!-- Google Fonts for a clean look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700&family=Mochiy+Pop+One&display=swap" rel="stylesheet">
+
+    <style>
+        /* --- CSSリセットと基本設定 --- */
+        :root {
+            --navy-darker: #1e3a8a;
+            --navy-dark: #1e40af;
+            --navy-base: #1d4ed8;
+            --navy-light: #2563eb;
+            --blue-900: #1e3a8a;
+            --blue-800: #1e40af;
+            --red-600: #dc2626;
+            --red-700: #b91c1c;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --white: #ffffff;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Mochiy Pop One', sans-serif;
+            background-color: var(--navy-darker);
+            color: var(--gray-800);
+            -webkit-tap-highlight-color: transparent;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        /* --- コンポーネントスタイル --- */
+        .timer-card {
+            width: 100%;
+            max-width: 448px; /* md */
+            margin-left: auto;
+            margin-right: auto;
+            background-color: var(--white);
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            padding: 1rem;
+        }
+
+        .main-content {
+            display: block;
+        }
+
+        .left-column, .right-column {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .left-column {
+            gap: 1.5rem;
+        }
+        
+        .right-column {
+             gap: 0.75rem;
+        }
+
+        header {
+            text-align: center;
+        }
+        header h1 {
+            font-size: 2.25rem;
+            line-height: 2.5rem;
+            color: var(--blue-900);
+        }
+        header p {
+            color: var(--gray-600);
+            margin-top: 0.25rem;
+        }
+
+        #music-settings {
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--gray-200);
+        }
+        #music-settings h2 {
+            font-size: 1.125rem;
+            line-height: 1.75rem;
+            color: var(--blue-900);
+            margin-bottom: 1rem;
+        }
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            line-height: 1rem;
+        }
+
+        .radio-label {
+            display: block;
+            cursor: pointer;
+            text-align: center;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            background-color: var(--gray-100);
+            transition: all 0.2s;
+        }
+        .radio-label:hover {
+            background-color: var(--gray-200);
+        }
+        input[type="radio"]:checked + .radio-label {
+            background-color: var(--blue-800);
+            color: var(--white);
+        }
+
+        #custom-music-label.selected {
+            background-color: var(--blue-900);
+            color: var(--white);
+        }
+
+        .volume-control {
+            margin-top: 1rem;
+        }
+        .volume-control label {
+            display: block;
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+            color: var(--gray-600);
+            margin-bottom: 0.5rem;
+        }
+
+        main {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 100%;
+            margin-top: 2rem;
+        }
+
+        #timer-display {
+            font-family: 'Inter', sans-serif;
+            font-weight: 700;
+            text-align: center;
+            letter-spacing: 0.05em;
+            font-size: 3rem;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+        }
+        .toggle-container span {
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+            color: var(--gray-600);
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 2.5rem;
+            margin-right: 0.5rem;
+            vertical-align: middle;
+            user-select: none;
+        }
+        .toggle-checkbox {
+            position: absolute;
+            display: block;
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 9999px;
+            background-color: var(--white);
+            border-width: 4px;
+            appearance: none;
+            cursor: pointer;
+            transition: all 0.2s ease-in;
+        }
+        .toggle-label {
+            display: block;
+            overflow: hidden;
+            height: 1.5rem;
+            border-radius: 9999px;
+            background-color: var(--gray-300);
+            cursor: pointer;
+        }
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: var(--navy-dark);
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: var(--navy-dark);
+        }
+
+        #start-stop-button {
+            width: 100%;
+            max-width: 24rem;
+            margin: 0 auto;
+            background-color: var(--blue-800);
+            color: var(--white);
+            font-weight: 700;
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            font-size: 1.125rem;
+            line-height: 1.75rem;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border: none;
+            cursor: pointer;
+        }
+        #start-stop-button:hover {
+            background-color: var(--blue-900);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        #start-stop-button:active {
+            transform: scale(0.95);
+        }
+        #start-stop-button.studying {
+            background-color: var(--red-600);
+        }
+        #start-stop-button.studying:hover {
+            background-color: var(--red-700);
+        }
+
+        #total-time-display {
+            text-align: center;
+            font-size: 1.125rem;
+            line-height: 1.75rem;
+            color: var(--gray-700);
+        }
+
+        #past-history-display {
+            text-align: center;
+            font-size: 0.75rem;
+            line-height: 1rem;
+            color: var(--gray-500);
+            margin-top: 0.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.125rem;
+        }
+
+        .app-footer {
+            color: var(--white);
+            font-size: 0.75rem;
+            line-height: 1rem;
+            margin-top: 1rem;
+        }
+
+        /* レスポンシブデザイン */
+        @media (min-width: 640px) { /* sm */
+            .timer-card {
+                padding: 2rem;
+            }
+            .button-grid {
+                font-size: 0.875rem;
+                line-height: 1.25rem;
+            }
+            #timer-display {
+                font-size: 3.75rem;
+            }
+             #start-stop-button {
+                font-size: 1.25rem;
+             }
+        }
+
+        @media (min-width: 768px) { /* md */
+            .timer-card {
+                max-width: 896px;
+                padding: 2rem;
+            }
+            .main-content {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 3rem;
+                align-items: center;
+            }
+            .left-column {
+                gap: 2rem;
+            }
+            header {
+                text-align: left;
+            }
+            header h1 {
+                font-size: 3rem;
+                line-height: 1;
+            }
+            main {
+                margin-top: 0;
+                gap: 1rem;
+            }
+        }
+        
+        @media (min-width: 1024px) { /* lg */
+             #timer-display {
+                font-size: 4.5rem;
+            }
+        }
+
+        /* ユーティリティ */
+        .hidden {
+            display: none;
+        }
+        .truncate {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="timer-card">
+        
+        <div class="main-content">
+            
+            <div class="left-column">
+                <header>
+                    <h1>音学Timer</h1>
+                    <p>学習タイムを、音楽で彩ろう。</p>
+                    <p>可視化しよう。</p>
+                </header>
+
+                <section id="music-settings">
+                    <h2>BGM設定</h2>
+                    <div class="button-grid">
+                        <div>
+                            <input type="radio" name="bgm" id="none" value="none" class="hidden" checked>
+                            <label for="none" class="radio-label">無音</label>
+                        </div>
+                        <div>
+                            <label for="custom-music-input" id="custom-music-label" class="radio-label truncate">ファイルを開く</label>
+                            <input type="file" id="custom-music-input" accept="audio/*" class="hidden" multiple>
+                        </div>
+                    </div>
+                    <div class="volume-control">
+                        <label for="volume-slider">音量調整</label>
+                        <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.3" class="volume-slider">
+                    </div>
+                </section>
+            </div>
+
+            <main class="right-column">
+                <div id="timer-display">00:00:00</div>
+                <div class="toggle-container">
+                    <span>タイマー表示</span>
+                    <div class="toggle-switch">
+                        <input type="checkbox" name="toggle" id="timer-toggle" class="toggle-checkbox" checked/>
+                        <label for="timer-toggle" class="toggle-label"></label>
+                    </div>
+                </div>
+                <button id="start-stop-button">学習開始</button>
+                <div id="total-time-display">本日の合計: 0分0秒</div>
+                <div id="past-history-display"></div>
+            </main>
+
+        </div>
+    </div>
+    
+    <footer class="app-footer">
+        Copyright (c) 2025 もなみん
+    </footer>
+
+    <audio id="audio-player"></audio>
+
+    <script>
+        // DOM要素の取得
+        const startStopButton = document.getElementById('start-stop-button');
+        const timerDisplay = document.getElementById('timer-display');
+        const totalTimeDisplay = document.getElementById('total-time-display');
+        const pastHistoryDisplay = document.getElementById('past-history-display');
+        const audioPlayer = document.getElementById('audio-player');
+        const bgmRadios = document.querySelectorAll('input[name="bgm"]');
+        const customMusicInput = document.getElementById('custom-music-input');
+        const customMusicLabel = document.getElementById('custom-music-label');
+        const timerToggle = document.getElementById('timer-toggle');
+        const volumeSlider = document.getElementById('volume-slider');
+
+        // アプリケーションの状態を管理する変数
+        let isStudying = false;
+        let timerInterval = null;
+        let elapsedSeconds = 0;
+        let sessionStartTime = null; // 日付変更をまたぐ処理用
+        let studyHistory = {}; // { "YYYY-MM-DD": seconds }
+        let playlist = [];
+        let currentTrackIndex = 0;
+
+        // --- 音楽保存用のIndexedDB ---
+        const musicDB = {
+            db: null,
+            init: function() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open('MusicDB_v2', 1);
+                    request.onerror = (event) => reject("IndexedDBエラー: " + request.error);
+                    request.onsuccess = (event) => {
+                        this.db = event.target.result;
+                        resolve(this.db);
+                    };
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains('playlist')) {
+                            db.createObjectStore('playlist', { keyPath: 'id' });
+                        }
+                    };
+                });
+            },
+            savePlaylist: function(files, index) {
+                return new Promise((resolve, reject) => {
+                    if (!this.db) return reject("DBが初期化されていません");
+                    const transaction = this.db.transaction(['playlist'], 'readwrite');
+                    const store = transaction.objectStore('playlist');
+                    const playlistData = { id: 'lastPlaylist', files: files, index: index };
+                    const request = store.put(playlistData);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject("プレイリストの保存に失敗しました: " + request.error);
+                });
+            },
+            loadPlaylist: function() {
+                return new Promise((resolve, reject) => {
+                    if (!this.db) return reject("DBが初期化されていません");
+                    const transaction = this.db.transaction(['playlist'], 'readonly');
+                    const store = transaction.objectStore('playlist');
+                    const request = store.get('lastPlaylist');
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject("プレイリストの読み込みに失敗しました: " + request.error);
+                });
+            }
+        };
+
+
+        // --- ヘルパー関数 ---
+
+        const formatTime = (totalSeconds) => {
+            const hours = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+            const minutes = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+            const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+            return `${hours}:${minutes}:${seconds}`;
+        };
+        
+        const formatTotalTime = (totalSeconds) => {
+            if (!totalSeconds) return '0分0秒';
+            if (totalSeconds < 60) return `${totalSeconds}秒`;
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            let result = '';
+            if (hours > 0) result += `${hours}時間`;
+            if (minutes > 0) result += `${minutes}分`;
+            if (seconds > 0 || (hours === 0 && minutes === 0)) result += `${seconds}秒`;
+            return result.trim();
+        };
+
+        const getTodayDateString = (date = new Date()) => {
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+        
+        const updateUI = () => {
+            // 今日の合計を更新
+            const today = getTodayDateString();
+            const totalSecondsToday = studyHistory[today] || 0;
+            totalTimeDisplay.textContent = `本日の合計: ${formatTotalTime(totalSecondsToday)}`;
+
+            // 過去5日間の履歴を更新
+            let historyHtml = '';
+            for (let i = 1; i <= 5; i++) {
+                const pastDate = new Date();
+                pastDate.setDate(pastDate.getDate() - i);
+                const dateString = getTodayDateString(pastDate);
+                const totalSeconds = studyHistory[dateString] || 0;
+
+                const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][pastDate.getDay()];
+                const formattedDate = `${pastDate.getMonth() + 1}月${pastDate.getDate()}日(${dayOfWeek})`;
+                historyHtml += `<div>${formattedDate}: ${formatTotalTime(totalSeconds)}</div>`;
+            }
+            pastHistoryDisplay.innerHTML = historyHtml;
+        };
+
+        // --- 学習タイマーのロジック ---
+
+        const startStudy = () => {
+            isStudying = true;
+            sessionStartTime = new Date(); // 正確な計算のために開始時刻を記録
+            startStopButton.textContent = '学習終了';
+            startStopButton.classList.add('studying');
+            
+            if (audioPlayer.src && document.querySelector('#none').checked === false) {
+                audioPlayer.play().catch(e => console.error("音声の再生に失敗しました:", e));
+            }
+
+            timerInterval = setInterval(() => {
+                elapsedSeconds++;
+                timerDisplay.textContent = formatTime(elapsedSeconds);
+            }, 1000);
+        };
+
+        const stopStudy = () => {
+            isStudying = false;
+            startStopButton.textContent = '学習開始';
+            startStopButton.classList.remove('studying');
+
+            audioPlayer.pause();
+            clearInterval(timerInterval);
+            
+            // --- 日付変更のロジック ---
+            if (sessionStartTime) {
+                const sessionEndTime = new Date();
+                const startDateString = getTodayDateString(sessionStartTime);
+                const endDateString = getTodayDateString(sessionEndTime);
+
+                if (startDateString === endDateString) {
+                    // 日付をまたいでいない場合
+                    studyHistory[startDateString] = (studyHistory[startDateString] || 0) + elapsedSeconds;
+                } else {
+                    // 日付をまたいだ場合
+                    const endOfStartDay = new Date(sessionStartTime);
+                    endOfStartDay.setHours(24, 0, 0, 0); // 開始日の深夜0時に設定
+
+                    const secondsBeforeMidnight = Math.round((endOfStartDay.getTime() - sessionStartTime.getTime()) / 1000);
+                    const secondsAfterMidnight = elapsedSeconds - secondsBeforeMidnight;
+
+                    // それぞれの日に時間を加算
+                    studyHistory[startDateString] = (studyHistory[startDateString] || 0) + secondsBeforeMidnight;
+                    studyHistory[endDateString] = (studyHistory[endDateString] || 0) + secondsAfterMidnight;
+                }
+            }
+            
+            elapsedSeconds = 0;
+            sessionStartTime = null;
+            timerDisplay.textContent = '00:00:00';
+            
+            saveHistoryToLocalStorage();
+            updateUI();
+        };
+
+        // --- 音楽関連のロジック ---
+        
+        const playTrack = (index) => {
+            if (playlist.length === 0 || index < 0 || index >= playlist.length) return;
+            currentTrackIndex = index;
+            const file = playlist[index];
+            const url = URL.createObjectURL(file);
+            audioPlayer.src = url;
+            if(isStudying) {
+                audioPlayer.play().catch(e => console.error("音声の再生に失敗しました:", e));
+            }
+            musicDB.savePlaylist(playlist, currentTrackIndex);
+        };
+
+        const playNextTrack = () => {
+            const nextIndex = (currentTrackIndex + 1) % playlist.length;
+            playTrack(nextIndex);
+        };
+
+        const updateBgmSource = () => {
+            const selectedBgmRadio = document.querySelector('input[name="bgm"]:checked');
+            if (selectedBgmRadio && selectedBgmRadio.value === 'none') {
+                audioPlayer.src = '';
+                customMusicLabel.classList.remove('selected');
+                customMusicLabel.textContent = 'ファイルを開く';
+                localStorage.setItem('bgmSelection', 'none');
+            }
+        };
+
+        const loadCustomMusic = async (event) => {
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+            
+            playlist = Array.from(files).filter(file => file.type.startsWith('audio/'));
+            
+            if (playlist.length === 0) {
+                alert('選択されたファイルに再生可能な音楽ファイルが見つかりませんでした。');
+                return;
+            }
+
+            currentTrackIndex = 0;
+
+            try {
+                await musicDB.savePlaylist(playlist, currentTrackIndex);
+                playTrack(currentTrackIndex);
+                document.querySelector('#none').checked = false;
+                customMusicLabel.textContent = `プレイリスト (${playlist.length}曲)`;
+                customMusicLabel.classList.add('selected');
+                localStorage.setItem('bgmSelection', 'custom');
+            } catch (error) {
+                console.error("プレイリストの保存に失敗しました:", error);
+                alert("プレイリストの保存に失敗しました。");
+            }
+        };
+
+        const setVolume = (volume) => {
+            audioPlayer.volume = volume;
+            localStorage.setItem('audioVolume', volume);
+        };
+
+        // --- 履歴関連のロジック ---
+
+        const saveHistoryToLocalStorage = () => {
+            localStorage.setItem('studyHistory', JSON.stringify(studyHistory));
+        };
+        
+        const loadInitialData = async () => {
+            // 学習履歴の読み込み
+            const savedHistory = localStorage.getItem('studyHistory');
+            if (savedHistory) {
+                studyHistory = JSON.parse(savedHistory);
+
+                // 古いデータを削除
+                const sixDaysAgo = new Date();
+                sixDaysAgo.setDate(sixDaysAgo.getDate() - 6);
+                sixDaysAgo.setHours(0, 0, 0, 0);
+
+                Object.keys(studyHistory).forEach(dateString => {
+                    const recordDate = new Date(dateString);
+                    if (recordDate < sixDaysAgo) {
+                        delete studyHistory[dateString];
+                    }
+                });
+                saveHistoryToLocalStorage();
+            }
+            updateUI();
+
+            // 音量の読み込み
+            const savedVolume = localStorage.getItem('audioVolume');
+            if (savedVolume) {
+                volumeSlider.value = savedVolume;
+            }
+            // スライダーの現在値（保存された値またはデフォルト値）から音量を設定
+            audioPlayer.volume = volumeSlider.value;
+
+
+            // カスタム音楽プレイリストの読み込み
+            try {
+                await musicDB.init();
+                const playlistData = await musicDB.loadPlaylist();
+                const savedBgmSelection = localStorage.getItem('bgmSelection');
+
+                if (savedBgmSelection === 'custom' && playlistData && playlistData.files && playlistData.files.length > 0) {
+                    // 前回カスタム音楽を選択しており、プレイリストが存在する場合
+                    playlist = playlistData.files;
+                    currentTrackIndex = playlistData.index || 0;
+                    playTrack(currentTrackIndex); // トラックを読み込むが再生はしない
+                    if(isStudying) audioPlayer.pause();
+
+                    document.querySelector('#none').checked = false;
+                    customMusicLabel.textContent = `プレイリスト (${playlist.length}曲)`;
+                    customMusicLabel.classList.add('selected');
+                } else {
+                    // それ以外の場合は「無音」をデフォルトにする
+                    document.querySelector('#none').checked = true;
+                    updateBgmSource();
+                }
+            } catch (error) {
+                console.error("初期データの読み込みに失敗:", error);
+                document.querySelector('#none').checked = true;
+                updateBgmSource();
+            }
+        };
+        
+        // --- イベントリスナーの設定 ---
+
+        startStopButton.addEventListener('click', () => {
+            if (isStudying) {
+                stopStudy();
+            } else {
+                startStudy();
+            }
+        });
+
+        bgmRadios.forEach(radio => {
+            radio.addEventListener('change', updateBgmSource);
+        });
+        
+        customMusicInput.addEventListener('change', loadCustomMusic);
+
+        timerToggle.addEventListener('change', () => {
+            timerDisplay.style.display = timerToggle.checked ? 'block' : 'none';
+        });
+
+        volumeSlider.addEventListener('input', (e) => setVolume(e.target.value));
+
+        audioPlayer.addEventListener('ended', playNextTrack);
+
+        // --- 初期化処理 ---
+        
+        window.addEventListener('load', loadInitialData);
+
+    </script>
+</body>
+</html>
