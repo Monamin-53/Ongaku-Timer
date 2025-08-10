@@ -8,7 +8,7 @@
     <!-- Google Fonts for a clean look -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700&family=Mochiy+Pop+One&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@700&family=Yusei+Magic&display=swap" rel="stylesheet">
 
     <style>
         /* --- CSSリセットと基本設定 --- */
@@ -38,7 +38,7 @@
         }
 
         body {
-            font-family: 'Mochiy Pop One', sans-serif;
+            font-family: 'Yusei Magic', sans-serif;
             background-color: var(--navy-darker);
             color: var(--gray-800);
             -webkit-tap-highlight-color: transparent;
@@ -340,7 +340,7 @@
                     <div class="button-grid">
                         <div>
                             <input type="radio" name="bgm" id="none" value="none" class="hidden" checked>
-                            <label for="none" class="radio-label">無音</label>
+                            <label for="none" class="radio-label">なし</label>
                         </div>
                         <div>
                             <label for="custom-music-input" id="custom-music-label" class="radio-label truncate">ファイルを開く</label>
@@ -644,6 +644,13 @@
             // スライダーの現在値（保存された値またはデフォルト値）から音量を設定
             audioPlayer.volume = volumeSlider.value;
 
+            // タイマー表示設定の読み込み
+            const savedTimerVisibility = localStorage.getItem('timerDisplayVisible');
+            if (savedTimerVisibility !== null) {
+                const isVisible = savedTimerVisibility === 'true';
+                timerToggle.checked = isVisible;
+                timerDisplay.style.display = isVisible ? 'block' : 'none';
+            }
 
             // カスタム音楽プレイリストの読み込み
             try {
@@ -662,7 +669,7 @@
                     customMusicLabel.textContent = `プレイリスト (${playlist.length}曲)`;
                     customMusicLabel.classList.add('selected');
                 } else {
-                    // それ以外の場合は「無音」をデフォルトにする
+                    // それ以外の場合は「なし」をデフォルトにする
                     document.querySelector('#none').checked = true;
                     updateBgmSource();
                 }
@@ -691,6 +698,7 @@
 
         timerToggle.addEventListener('change', () => {
             timerDisplay.style.display = timerToggle.checked ? 'block' : 'none';
+            localStorage.setItem('timerDisplayVisible', timerToggle.checked);
         });
 
         volumeSlider.addEventListener('input', (e) => setVolume(e.target.value));
@@ -704,3 +712,4 @@
     </script>
 </body>
 </html>
+
