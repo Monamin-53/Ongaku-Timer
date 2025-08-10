@@ -364,7 +364,7 @@
                     </div>
                 </div>
                 <button id="start-stop-button">学習開始</button>
-                <div id="total-time-display">本日の合計: 0分0秒</div>
+                <div id="total-time-display">本日の学習時間: 0分0秒</div>
                 <div id="past-history-display"></div>
             </main>
 
@@ -475,9 +475,7 @@
             // 今日の合計を更新
             const today = getTodayDateString();
             const totalSecondsToday = studyHistory[today] || 0;
-            totalTimeDisplay.textContent = `本日の合計: ${formatTotalTime(totalSecondsToday)}`;
-
-            // 過去5日間の履歴を更新
+            totalTimeDisplay.textContent = `本日の学習時間: ${formatTotalTime(totalSecondsToday)}`;
             let historyHtml = '';
             for (let i = 1; i <= 5; i++) {
                 const pastDate = new Date();
@@ -508,6 +506,15 @@
                 // 現在時刻と開始時刻の差から、経過秒数を再計算する
                 elapsedSeconds = Math.floor((new Date() - sessionStartTime) / 1000);
                 timerDisplay.textContent = formatTime(elapsedSeconds);
+
+                // 24時間以上経過した場合の自動停止ロジック
+                if (elapsedSeconds >= 86400) { // 86400秒 = 24時間
+                    const now = new Date();
+                    // 開始日と現在日が異なる場合（日付が変わった後）に停止
+                    if (getTodayDateString(now) !== getTodayDateString(sessionStartTime)) {
+                        stopStudy();
+                    }
+                }
             }, 1000);
         };
 
@@ -719,3 +726,4 @@
     </script>
 </body>
 </html>
+
