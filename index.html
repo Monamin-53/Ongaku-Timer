@@ -705,6 +705,12 @@
 
         audioPlayer.addEventListener('ended', playNextTrack);
 
+        window.addEventListener('beforeunload', (event) => {
+            if (isStudying) {
+                stopStudy();
+            }
+        });
+
         // --- 初期化処理 ---
         
         window.addEventListener('load', loadInitialData);
@@ -712,5 +718,6 @@
     </script>
 </body>
 </html>
+
 
 
