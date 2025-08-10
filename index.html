@@ -505,7 +505,8 @@
             }
 
             timerInterval = setInterval(() => {
-                elapsedSeconds++;
+                // 現在時刻と開始時刻の差から、経過秒数を再計算する
+                elapsedSeconds = Math.floor((new Date() - sessionStartTime) / 1000);
                 timerDisplay.textContent = formatTime(elapsedSeconds);
             }, 1000);
         };
@@ -718,6 +719,3 @@
     </script>
 </body>
 </html>
-
-
-
