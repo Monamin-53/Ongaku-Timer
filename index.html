@@ -398,6 +398,8 @@
         let studyHistory = {}; // { "YYYY-MM-DD": seconds }
         let playlist = [];
         let currentTrackIndex = 0;
+        let lastCheckedDateString = null; // 日付変更チェック用
+        let wakeLock = null; // スリープ防止用
 
         // --- 音楽保存用のIndexedDB ---
         const musicDB = {
@@ -492,28 +494,49 @@
 
         // --- 学習タイマーのロジック ---
 
-        const startStudy = () => {
+        const startStudy = async () => {
             isStudying = true;
             sessionStartTime = new Date(); // 正確な計算のために開始時刻を記録
+            lastCheckedDateString = getTodayDateString(); // チェック用の現在日付をセット
             startStopButton.textContent = '学習終了';
             startStopButton.classList.add('studying');
             
+            // スリープを防止
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (err) {
+                console.error(`${err.name}, ${err.message}`);
+            }
+
             if (audioPlayer.src && document.querySelector('#none').checked === false) {
                 audioPlayer.play().catch(e => console.error("音声の再生に失敗しました:", e));
             }
 
             timerInterval = setInterval(() => {
+                const now = new Date();
                 // 現在時刻と開始時刻の差から、経過秒数を再計算する
-                elapsedSeconds = Math.floor((new Date() - sessionStartTime) / 1000);
+                elapsedSeconds = Math.floor((now - sessionStartTime) / 1000);
                 timerDisplay.textContent = formatTime(elapsedSeconds);
 
+                // --- 日付変更チェック ---
+                const currentDateString = getTodayDateString(now);
+                if (currentDateString !== lastCheckedDateString) {
+                    // 日付が変わったのでUI（過去の履歴）を更新
+                    updateUI();
+                    lastCheckedDateString = currentDateString; // チェックした日付を更新
+                }
+
                 // 24時間以上経過した場合の自動停止ロジック
-                if (elapsedSeconds >= 86400) { // 86400秒 = 24時間
-                    const now = new Date();
-                    // 開始日と現在日が異なる場合（日付が変わった後）に停止
-                    if (getTodayDateString(now) !== getTodayDateString(sessionStartTime)) {
-                        stopStudy();
-                    }
+                const startDay = new Date(sessionStartTime);
+                startDay.setHours(0, 0, 0, 0);
+                const currentDay = new Date(now);
+                currentDay.setHours(0, 0, 0, 0);
+                const midnightsCrossed = (currentDay - startDay) / (1000 * 60 * 60 * 24);
+
+                if (midnightsCrossed >= 2) {
+                    stopStudy();
                 }
             }, 1000);
         };
@@ -523,29 +546,54 @@
             startStopButton.textContent = '学習開始';
             startStopButton.classList.remove('studying');
 
+            // スリープ防止を解除
+            if (wakeLock !== null) {
+                wakeLock.release().then(() => {
+                    wakeLock = null;
+                });
+            }
+
             audioPlayer.pause();
             clearInterval(timerInterval);
             
             // --- 日付変更のロジック ---
             if (sessionStartTime) {
                 const sessionEndTime = new Date();
-                const startDateString = getTodayDateString(sessionStartTime);
-                const endDateString = getTodayDateString(sessionEndTime);
+                const startDay = new Date(sessionStartTime);
+                startDay.setHours(0, 0, 0, 0);
+                const endDay = new Date(sessionEndTime);
+                endDay.setHours(0, 0, 0, 0);
+                
+                const midnightsCrossed = (endDay.getTime() - startDay.getTime()) / (1000 * 60 * 60 * 24);
 
-                if (startDateString === endDateString) {
-                    // 日付をまたいでいない場合
-                    studyHistory[startDateString] = (studyHistory[startDateString] || 0) + elapsedSeconds;
+                if (midnightsCrossed === 0) {
+                    // ケース1: 日付をまたがない
+                    const dateString = getTodayDateString(sessionStartTime);
+                    studyHistory[dateString] = (studyHistory[dateString] || 0) + elapsedSeconds;
                 } else {
-                    // 日付をまたいだ場合
+                    // ケース2: 1回以上日付をまたぐ
+                    // 開始日の学習時間
                     const endOfStartDay = new Date(sessionStartTime);
-                    endOfStartDay.setHours(24, 0, 0, 0); // 開始日の深夜0時に設定
+                    endOfStartDay.setHours(24, 0, 0, 0);
+                    const secondsOnStartDay = Math.round((endOfStartDay - sessionStartTime) / 1000);
+                    const startDateString = getTodayDateString(sessionStartTime);
+                    studyHistory[startDateString] = (studyHistory[startDateString] || 0) + secondsOnStartDay;
 
-                    const secondsBeforeMidnight = Math.round((endOfStartDay.getTime() - sessionStartTime.getTime()) / 1000);
-                    const secondsAfterMidnight = elapsedSeconds - secondsBeforeMidnight;
+                    // 中間の日の学習時間（24時間）
+                    for (let i = 1; i < midnightsCrossed; i++) {
+                        const middleDay = new Date(sessionStartTime);
+                        middleDay.setDate(middleDay.getDate() + i);
+                        const middleDayString = getTodayDateString(middleDay);
+                        studyHistory[middleDayString] = 86400; // 24時間
+                    }
 
-                    // それぞれの日に時間を加算
-                    studyHistory[startDateString] = (studyHistory[startDateString] || 0) + secondsBeforeMidnight;
-                    studyHistory[endDateString] = (studyHistory[endDateString] || 0) + secondsAfterMidnight;
+                    // 終了日の学習時間
+                    const startOfEndDay = new Date(sessionEndTime);
+                    startOfEndDay.setHours(0, 0, 0, 0);
+                    // 2回以上日付をまたいだ場合（自動停止）は終了日の学習時間を0にする
+                    const secondsOnEndDay = midnightsCrossed >= 2 ? 0 : Math.round((sessionEndTime - startOfEndDay) / 1000);
+                    const endDateString = getTodayDateString(sessionEndTime);
+                    studyHistory[endDateString] = (studyHistory[endDateString] || 0) + secondsOnEndDay;
                 }
             }
             
@@ -602,6 +650,9 @@
             try {
                 await musicDB.savePlaylist(playlist, currentTrackIndex);
                 playTrack(currentTrackIndex);
+                if (isStudying) {
+                    audioPlayer.play().catch(e => console.error("音声の再生に失敗しました:", e));
+                }
                 document.querySelector('#none').checked = false;
                 customMusicLabel.textContent = `プレイリスト (${playlist.length}曲)`;
                 customMusicLabel.classList.add('selected');
@@ -726,4 +777,3 @@
     </script>
 </body>
 </html>
-
