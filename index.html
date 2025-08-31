@@ -131,6 +131,11 @@
             background-color: var(--blue-900);
             color: var(--white);
         }
+        
+        .radio-label.error {
+            background-color: var(--red-600) !important;
+            color: var(--white) !important;
+        }
 
         .volume-control {
             margin-top: 1rem;
@@ -141,6 +146,10 @@
             line-height: 1.25rem;
             color: var(--gray-600);
             margin-bottom: 0.5rem;
+        }
+        
+        .volume-slider {
+            width: 100%;
         }
 
         main {
@@ -174,37 +183,44 @@
             position: relative;
             display: inline-block;
             width: 2.5rem;
-            margin-right: 0.5rem;
+            height: 1.5rem;
             vertical-align: middle;
             user-select: none;
         }
         .toggle-checkbox {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
             position: absolute;
-            display: block;
-            width: 1.5rem;
-            height: 1.5rem;
-            border-radius: 9999px;
-            background-color: var(--white);
-            border-width: 4px;
-            appearance: none;
             cursor: pointer;
-            transition: all 0.2s ease-in;
-        }
-        .toggle-label {
-            display: block;
-            overflow: hidden;
-            height: 1.5rem;
-            border-radius: 9999px;
-            background-color: var(--gray-300);
-            cursor: pointer;
-        }
-        .toggle-checkbox:checked {
+            top: 0;
+            left: 0;
             right: 0;
-            border-color: var(--navy-dark);
+            bottom: 0;
+            background-color: var(--gray-300);
+            transition: .4s;
+            border-radius: 9999px;
         }
-        .toggle-checkbox:checked + .toggle-label {
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 1.125rem;
+            width: 1.125rem;
+            left: 0.1875rem;
+            bottom: 0.1875rem;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        .toggle-checkbox:checked + .toggle-slider {
             background-color: var(--navy-dark);
         }
+        .toggle-checkbox:checked + .toggle-slider:before {
+            transform: translateX(1rem);
+        }
+
 
         #start-stop-button {
             width: 100%;
@@ -322,7 +338,7 @@
         }
     </style>
 </head>
-<body class="flex flex-col items-center justify-center min-h-screen p-4">
+<body>
 
     <div class="timer-card">
         
@@ -358,10 +374,10 @@
                 <div id="timer-display">00:00:00</div>
                 <div class="toggle-container">
                     <span>タイマー表示</span>
-                    <div class="toggle-switch">
-                        <input type="checkbox" name="toggle" id="timer-toggle" class="toggle-checkbox" checked/>
-                        <label for="timer-toggle" class="toggle-label"></label>
-                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="timer-toggle" class="toggle-checkbox" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
                 </div>
                 <button id="start-stop-button">学習開始</button>
                 <div id="total-time-display">本日の学習時間: 0分0秒</div>
@@ -378,402 +394,434 @@
     <audio id="audio-player"></audio>
 
     <script>
-        // DOM要素の取得
-        const startStopButton = document.getElementById('start-stop-button');
-        const timerDisplay = document.getElementById('timer-display');
-        const totalTimeDisplay = document.getElementById('total-time-display');
-        const pastHistoryDisplay = document.getElementById('past-history-display');
-        const audioPlayer = document.getElementById('audio-player');
-        const bgmRadios = document.querySelectorAll('input[name="bgm"]');
-        const customMusicInput = document.getElementById('custom-music-input');
-        const customMusicLabel = document.getElementById('custom-music-label');
-        const timerToggle = document.getElementById('timer-toggle');
-        const volumeSlider = document.getElementById('volume-slider');
+        /**
+         * アプリケーション全体を管理するオブジェクト
+         * @property {Object} elements - DOM要素のキャッシュ
+         * @property {Object} state - アプリケーションの状態
+         * @property {Object} timer - タイマー関連のメソッド
+         * @property {Object} music - 音楽関連のメソッド
+         * @property {Object} ui - UI関連のメソッド
+         * @property {Object} storage - データ永続化関連のメソッド
+         * @property {Object} system - WakeLockなどシステム関連のメソッド
+         * @property {Object} db - IndexedDB関連のメソッド
+         * @property {Object} utils - 汎用ヘルパー関数
+         */
+        const app = {
+            // --- 定数 ---
+            DB_NAME: 'MusicDB_v2',
+            DB_VERSION: 1,
+            SECONDS_IN_A_DAY: 86400,
 
-        // アプリケーションの状態を管理する変数
-        let isStudying = false;
-        let timerInterval = null;
-        let elapsedSeconds = 0;
-        let sessionStartTime = null; // 日付変更をまたぐ処理用
-        let studyHistory = {}; // { "YYYY-MM-DD": seconds }
-        let playlist = [];
-        let currentTrackIndex = 0;
-        let lastCheckedDateString = null; // 日付変更チェック用
-        let wakeLock = null; // スリープ防止用
+            // --- DOM要素 ---
+            elements: {},
 
-        // --- 音楽保存用のIndexedDB ---
-        const musicDB = {
-            db: null,
-            init: function() {
-                return new Promise((resolve, reject) => {
-                    const request = indexedDB.open('MusicDB_v2', 1);
-                    request.onerror = (event) => reject("IndexedDBエラー: " + request.error);
-                    request.onsuccess = (event) => {
-                        this.db = event.target.result;
-                        resolve(this.db);
-                    };
-                    request.onupgradeneeded = (event) => {
-                        const db = event.target.result;
-                        if (!db.objectStoreNames.contains('playlist')) {
-                            db.createObjectStore('playlist', { keyPath: 'id' });
-                        }
-                    };
-                });
+            // --- アプリケーションの状態 ---
+            state: {
+                isStudying: false,
+                timerInterval: null,
+                elapsedSeconds: 0,
+                sessionStartTime: null,
+                studyHistory: {}, // { "YYYY-MM-DD": seconds }
+                playlist: [],
+                currentTrackIndex: 0,
+                lastCheckedDateString: null,
+                wakeLock: null,
+                db: null,
+                currentObjectUrl: null, // 現在の音楽ファイルのURL
             },
-            savePlaylist: function(files, index) {
-                return new Promise((resolve, reject) => {
-                    if (!this.db) return reject("DBが初期化されていません");
-                    const transaction = this.db.transaction(['playlist'], 'readwrite');
-                    const store = transaction.objectStore('playlist');
-                    const playlistData = { id: 'lastPlaylist', files: files, index: index };
-                    const request = store.put(playlistData);
-                    request.onsuccess = () => resolve();
-                    request.onerror = () => reject("プレイリストの保存に失敗しました: " + request.error);
-                });
-            },
-            loadPlaylist: function() {
-                return new Promise((resolve, reject) => {
-                    if (!this.db) return reject("DBが初期化されていません");
-                    const transaction = this.db.transaction(['playlist'], 'readonly');
-                    const store = transaction.objectStore('playlist');
-                    const request = store.get('lastPlaylist');
-                    request.onsuccess = () => resolve(request.result);
-                    request.onerror = () => reject("プレイリストの読み込みに失敗しました: " + request.error);
-                });
-            }
-        };
 
-
-        // --- ヘルパー関数 ---
-
-        const formatTime = (totalSeconds) => {
-            const hours = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
-            const minutes = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
-            const seconds = (totalSeconds % 60).toString().padStart(2, '0');
-            return `${hours}:${minutes}:${seconds}`;
-        };
-        
-        const formatTotalTime = (totalSeconds) => {
-            if (!totalSeconds) return '0分0秒';
-            if (totalSeconds < 60) return `${totalSeconds}秒`;
-            const hours = Math.floor(totalSeconds / 3600);
-            const minutes = Math.floor((totalSeconds % 3600) / 60);
-            const seconds = totalSeconds % 60;
-            let result = '';
-            if (hours > 0) result += `${hours}時間`;
-            if (minutes > 0) result += `${minutes}分`;
-            if (seconds > 0 || (hours === 0 && minutes === 0)) result += `${seconds}秒`;
-            return result.trim();
-        };
-
-        const getTodayDateString = (date = new Date()) => {
-            const year = date.getFullYear();
-            const month = (date.getMonth() + 1).toString().padStart(2, '0');
-            const day = date.getDate().toString().padStart(2, '0');
-            return `${year}-${month}-${day}`;
-        };
-        
-        const updateUI = () => {
-            // 今日の合計を更新
-            const today = getTodayDateString();
-            const totalSecondsToday = studyHistory[today] || 0;
-            totalTimeDisplay.textContent = `本日の学習時間: ${formatTotalTime(totalSecondsToday)}`;
-            let historyHtml = '';
-            for (let i = 1; i <= 5; i++) {
-                const pastDate = new Date();
-                pastDate.setDate(pastDate.getDate() - i);
-                const dateString = getTodayDateString(pastDate);
-                const totalSeconds = studyHistory[dateString] || 0;
-
-                const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][pastDate.getDay()];
-                const formattedDate = `${pastDate.getMonth() + 1}月${pastDate.getDate()}日(${dayOfWeek})`;
-                historyHtml += `<div>${formattedDate}: ${formatTotalTime(totalSeconds)}</div>`;
-            }
-            pastHistoryDisplay.innerHTML = historyHtml;
-        };
-
-        // --- 学習タイマーのロジック ---
-
-        const startStudy = async () => {
-            isStudying = true;
-            sessionStartTime = new Date(); // 正確な計算のために開始時刻を記録
-            lastCheckedDateString = getTodayDateString(); // チェック用の現在日付をセット
-            startStopButton.textContent = '学習終了';
-            startStopButton.classList.add('studying');
-            
-            // スリープを防止
-            try {
-                if ('wakeLock' in navigator) {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                }
-            } catch (err) {
-                console.error(`${err.name}, ${err.message}`);
-            }
-
-            if (audioPlayer.src && document.querySelector('#none').checked === false) {
-                audioPlayer.play().catch(e => console.error("音声の再生に失敗しました:", e));
-            }
-
-            timerInterval = setInterval(() => {
-                const now = new Date();
-                // 現在時刻と開始時刻の差から、経過秒数を再計算する
-                elapsedSeconds = Math.floor((now - sessionStartTime) / 1000);
-                timerDisplay.textContent = formatTime(elapsedSeconds);
-
-                // --- 日付変更チェック ---
-                const currentDateString = getTodayDateString(now);
-                if (currentDateString !== lastCheckedDateString) {
-                    // 日付が変わったのでUI（過去の履歴）を更新
-                    updateUI();
-                    lastCheckedDateString = currentDateString; // チェックした日付を更新
-                }
-
-                // 24時間以上経過した場合の自動停止ロジック
-                const startDay = new Date(sessionStartTime);
-                startDay.setHours(0, 0, 0, 0);
-                const currentDay = new Date(now);
-                currentDay.setHours(0, 0, 0, 0);
-                const midnightsCrossed = (currentDay - startDay) / (1000 * 60 * 60 * 24);
-
-                if (midnightsCrossed >= 2) {
-                    stopStudy();
-                }
-            }, 1000);
-        };
-
-        const stopStudy = () => {
-            isStudying = false;
-            startStopButton.textContent = '学習開始';
-            startStopButton.classList.remove('studying');
-
-            // スリープ防止を解除
-            if (wakeLock !== null) {
-                wakeLock.release().then(() => {
-                    wakeLock = null;
-                });
-            }
-
-            audioPlayer.pause();
-            clearInterval(timerInterval);
-            
-            // --- 日付変更のロジック ---
-            if (sessionStartTime) {
-                const sessionEndTime = new Date();
-                const startDay = new Date(sessionStartTime);
-                startDay.setHours(0, 0, 0, 0);
-                const endDay = new Date(sessionEndTime);
-                endDay.setHours(0, 0, 0, 0);
+            // --- 初期化 ---
+            init() {
+                this.elements = {
+                    startStopButton: document.getElementById('start-stop-button'),
+                    timerDisplay: document.getElementById('timer-display'),
+                    totalTimeDisplay: document.getElementById('total-time-display'),
+                    pastHistoryDisplay: document.getElementById('past-history-display'),
+                    audioPlayer: document.getElementById('audio-player'),
+                    bgmRadios: document.querySelectorAll('input[name="bgm"]'),
+                    customMusicInput: document.getElementById('custom-music-input'),
+                    customMusicLabel: document.getElementById('custom-music-label'),
+                    timerToggle: document.getElementById('timer-toggle'),
+                    volumeSlider: document.getElementById('volume-slider'),
+                };
                 
-                const midnightsCrossed = (endDay.getTime() - startDay.getTime()) / (1000 * 60 * 60 * 24);
+                this.setupEventListeners();
+                this.loadInitialData();
+            },
 
-                if (midnightsCrossed === 0) {
-                    // ケース1: 日付をまたがない
-                    const dateString = getTodayDateString(sessionStartTime);
-                    studyHistory[dateString] = (studyHistory[dateString] || 0) + elapsedSeconds;
-                } else {
-                    // ケース2: 1回以上日付をまたぐ
-                    // 開始日の学習時間
-                    const endOfStartDay = new Date(sessionStartTime);
-                    endOfStartDay.setHours(24, 0, 0, 0);
-                    const secondsOnStartDay = Math.round((endOfStartDay - sessionStartTime) / 1000);
-                    const startDateString = getTodayDateString(sessionStartTime);
-                    studyHistory[startDateString] = (studyHistory[startDateString] || 0) + secondsOnStartDay;
-
-                    // 中間の日の学習時間（24時間）
-                    for (let i = 1; i < midnightsCrossed; i++) {
-                        const middleDay = new Date(sessionStartTime);
-                        middleDay.setDate(middleDay.getDate() + i);
-                        const middleDayString = getTodayDateString(middleDay);
-                        studyHistory[middleDayString] = 86400; // 24時間
-                    }
-
-                    // 終了日の学習時間
-                    const startOfEndDay = new Date(sessionEndTime);
-                    startOfEndDay.setHours(0, 0, 0, 0);
-                    // 2回以上日付をまたいだ場合（自動停止）は終了日の学習時間を0にする
-                    const secondsOnEndDay = midnightsCrossed >= 2 ? 0 : Math.round((sessionEndTime - startOfEndDay) / 1000);
-                    const endDateString = getTodayDateString(sessionEndTime);
-                    studyHistory[endDateString] = (studyHistory[endDateString] || 0) + secondsOnEndDay;
-                }
-            }
-            
-            elapsedSeconds = 0;
-            sessionStartTime = null;
-            timerDisplay.textContent = '00:00:00';
-            
-            saveHistoryToLocalStorage();
-            updateUI();
-        };
-
-        // --- 音楽関連のロジック ---
-        
-        const playTrack = (index) => {
-            if (playlist.length === 0 || index < 0 || index >= playlist.length) return;
-            currentTrackIndex = index;
-            const file = playlist[index];
-            const url = URL.createObjectURL(file);
-            audioPlayer.src = url;
-            if(isStudying) {
-                audioPlayer.play().catch(e => console.error("音声の再生に失敗しました:", e));
-            }
-            musicDB.savePlaylist(playlist, currentTrackIndex);
-        };
-
-        const playNextTrack = () => {
-            const nextIndex = (currentTrackIndex + 1) % playlist.length;
-            playTrack(nextIndex);
-        };
-
-        const updateBgmSource = () => {
-            const selectedBgmRadio = document.querySelector('input[name="bgm"]:checked');
-            if (selectedBgmRadio && selectedBgmRadio.value === 'none') {
-                audioPlayer.src = '';
-                customMusicLabel.classList.remove('selected');
-                customMusicLabel.textContent = 'ファイルを開く';
-                localStorage.setItem('bgmSelection', 'none');
-            }
-        };
-
-        const loadCustomMusic = async (event) => {
-            const files = event.target.files;
-            if (!files || files.length === 0) return;
-            
-            playlist = Array.from(files).filter(file => file.type.startsWith('audio/'));
-            
-            if (playlist.length === 0) {
-                alert('選択されたファイルに再生可能な音楽ファイルが見つかりませんでした。');
-                return;
-            }
-
-            currentTrackIndex = 0;
-
-            try {
-                await musicDB.savePlaylist(playlist, currentTrackIndex);
-                playTrack(currentTrackIndex);
-                if (isStudying) {
-                    audioPlayer.play().catch(e => console.error("音声の再生に失敗しました:", e));
-                }
-                document.querySelector('#none').checked = false;
-                customMusicLabel.textContent = `プレイリスト (${playlist.length}曲)`;
-                customMusicLabel.classList.add('selected');
-                localStorage.setItem('bgmSelection', 'custom');
-            } catch (error) {
-                console.error("プレイリストの保存に失敗しました:", error);
-                alert("プレイリストの保存に失敗しました。");
-            }
-        };
-
-        const setVolume = (volume) => {
-            audioPlayer.volume = volume;
-            localStorage.setItem('audioVolume', volume);
-        };
-
-        // --- 履歴関連のロジック ---
-
-        const saveHistoryToLocalStorage = () => {
-            localStorage.setItem('studyHistory', JSON.stringify(studyHistory));
-        };
-        
-        const loadInitialData = async () => {
-            // 学習履歴の読み込み
-            const savedHistory = localStorage.getItem('studyHistory');
-            if (savedHistory) {
-                studyHistory = JSON.parse(savedHistory);
-
-                // 古いデータを削除
-                const sixDaysAgo = new Date();
-                sixDaysAgo.setDate(sixDaysAgo.getDate() - 6);
-                sixDaysAgo.setHours(0, 0, 0, 0);
-
-                Object.keys(studyHistory).forEach(dateString => {
-                    const recordDate = new Date(dateString);
-                    if (recordDate < sixDaysAgo) {
-                        delete studyHistory[dateString];
+            // --- イベントリスナー設定 ---
+            setupEventListeners() {
+                this.elements.startStopButton.addEventListener('click', () => this.timer.toggleStudy());
+                this.elements.bgmRadios.forEach(radio => {
+                    radio.addEventListener('change', () => this.music.updateBgmSource());
+                });
+                this.elements.customMusicInput.addEventListener('change', (e) => this.music.loadCustomMusic(e));
+                this.elements.timerToggle.addEventListener('change', () => this.ui.toggleTimerDisplay());
+                this.elements.volumeSlider.addEventListener('input', (e) => this.music.setVolume(e.target.value));
+                this.elements.audioPlayer.addEventListener('ended', () => this.music.playNextTrack());
+                window.addEventListener('beforeunload', () => {
+                    if (this.state.isStudying) {
+                        this.timer.stopStudy();
                     }
                 });
-                saveHistoryToLocalStorage();
-            }
-            updateUI();
+                document.addEventListener('visibilitychange', () => this.system.handleVisibilityChange());
+            },
+            
+            // --- データロード ---
+            async loadInitialData() {
+                this.storage.loadHistory();
+                this.music.loadVolume();
+                this.ui.loadTimerVisibility();
+                await this.music.loadPlaylistFromDB();
+            },
 
-            // 音量の読み込み
-            const savedVolume = localStorage.getItem('audioVolume');
-            if (savedVolume) {
-                volumeSlider.value = savedVolume;
-            }
-            // スライダーの現在値（保存された値またはデフォルト値）から音量を設定
-            audioPlayer.volume = volumeSlider.value;
+            // --- 機能別メソッド ---
 
-            // タイマー表示設定の読み込み
-            const savedTimerVisibility = localStorage.getItem('timerDisplayVisible');
-            if (savedTimerVisibility !== null) {
-                const isVisible = savedTimerVisibility === 'true';
-                timerToggle.checked = isVisible;
-                timerDisplay.style.display = isVisible ? 'block' : 'none';
-            }
+            timer: {
+                toggleStudy() {
+                    if (app.state.isStudying) {
+                        this.stopStudy();
+                    } else {
+                        this.startStudy();
+                    }
+                },
 
-            // カスタム音楽プレイリストの読み込み
-            try {
-                await musicDB.init();
-                const playlistData = await musicDB.loadPlaylist();
-                const savedBgmSelection = localStorage.getItem('bgmSelection');
+                async startStudy() {
+                    app.state.isStudying = true;
+                    app.state.sessionStartTime = new Date();
+                    app.state.lastCheckedDateString = app.utils.getCurrentDateString();
+                    
+                    app.elements.startStopButton.textContent = '学習終了';
+                    app.elements.startStopButton.classList.add('studying');
+                    
+                    app.system.requestWakeLock();
 
-                if (savedBgmSelection === 'custom' && playlistData && playlistData.files && playlistData.files.length > 0) {
-                    // 前回カスタム音楽を選択しており、プレイリストが存在する場合
-                    playlist = playlistData.files;
-                    currentTrackIndex = playlistData.index || 0;
-                    playTrack(currentTrackIndex); // トラックを読み込むが再生はしない
-                    if(isStudying) audioPlayer.pause();
+                    if (app.elements.audioPlayer.src && !document.querySelector('#none').checked) {
+                        app.elements.audioPlayer.play().catch(e => console.error("音声の再生に失敗しました:", e));
+                    }
 
-                    document.querySelector('#none').checked = false;
-                    customMusicLabel.textContent = `プレイリスト (${playlist.length}曲)`;
-                    customMusicLabel.classList.add('selected');
-                } else {
-                    // それ以外の場合は「なし」をデフォルトにする
-                    document.querySelector('#none').checked = true;
-                    updateBgmSource();
+                    app.state.timerInterval = setInterval(() => {
+                        const now = new Date();
+                        app.state.elapsedSeconds = Math.floor((now - app.state.sessionStartTime) / 1000);
+                        app.elements.timerDisplay.textContent = app.utils.formatTime(app.state.elapsedSeconds);
+
+                        const currentDateString = app.utils.getCurrentDateString(now);
+                        if (currentDateString !== app.state.lastCheckedDateString) {
+                            app.ui.updateUI();
+                            app.state.lastCheckedDateString = currentDateString;
+                        }
+                        
+                        if (app.state.elapsedSeconds >= app.SECONDS_IN_A_DAY * 2) {
+                            this.stopStudy();
+                        }
+                    }, 1000);
+                },
+
+                stopStudy() {
+                    app.state.isStudying = false;
+                    app.elements.startStopButton.textContent = '学習開始';
+                    app.elements.startStopButton.classList.remove('studying');
+
+                    if (app.state.wakeLock) {
+                        app.state.wakeLock.release().then(() => { app.state.wakeLock = null; });
+                    }
+
+                    app.elements.audioPlayer.pause();
+                    clearInterval(app.state.timerInterval);
+                    
+                    app.storage.calculateAndSaveStudyTime();
+
+                    app.state.elapsedSeconds = 0;
+                    app.state.sessionStartTime = null;
+                    app.elements.timerDisplay.textContent = '00:00:00';
+                    
+                    app.storage.saveHistoryToLocalStorage();
+                    app.ui.updateUI();
+                },
+            },
+
+            music: {
+                playTrack(index, shouldPlay = true) {
+                    if (app.state.currentObjectUrl) {
+                        URL.revokeObjectURL(app.state.currentObjectUrl);
+                    }
+
+                    const { playlist } = app.state;
+                    if (playlist.length === 0 || index < 0 || index >= playlist.length) return;
+                    
+                    app.state.currentTrackIndex = index;
+                    const file = playlist[index];
+                    const url = URL.createObjectURL(file);
+                    app.state.currentObjectUrl = url;
+                    app.elements.audioPlayer.src = url;
+                    
+                    if (shouldPlay && app.state.isStudying) {
+                        app.elements.audioPlayer.play().catch(e => console.error("音声の再生に失敗しました:", e));
+                    }
+                    app.db.savePlaylist(playlist, app.state.currentTrackIndex);
+                },
+
+                playNextTrack() {
+                    const nextIndex = (app.state.currentTrackIndex + 1) % app.state.playlist.length;
+                    this.playTrack(nextIndex);
+                },
+                
+                async loadCustomMusic(event) {
+                    const files = event.target.files;
+                    if (!files || files.length === 0) return;
+                    
+                    app.state.playlist = Array.from(files).filter(file => file.type.startsWith('audio/'));
+                    
+                    if (app.state.playlist.length === 0) {
+                        console.error('選択されたファイルに再生可能な音楽ファイルが見つかりませんでした。');
+                        app.ui.showTemporaryMessage(app.elements.customMusicLabel, '音声なし', 'ファイルを開く');
+                        return;
+                    }
+
+                    app.state.currentTrackIndex = 0;
+
+                    try {
+                        await app.db.savePlaylist(app.state.playlist, app.state.currentTrackIndex);
+                        this.playTrack(app.state.currentTrackIndex);
+                        
+                        document.querySelector('#none').checked = false;
+                        app.elements.customMusicLabel.textContent = `プレイリスト (${app.state.playlist.length}曲)`;
+                        app.elements.customMusicLabel.classList.add('selected');
+                        localStorage.setItem('bgmSelection', 'custom');
+                    } catch (error) {
+                        console.error("プレイリストの保存に失敗しました:", error);
+                        app.ui.showTemporaryMessage(app.elements.customMusicLabel, '保存失敗');
+                    }
+                },
+
+                updateBgmSource() {
+                    const selectedBgmRadio = document.querySelector('input[name="bgm"]:checked');
+                    if (selectedBgmRadio?.value === 'none') {
+                        app.elements.audioPlayer.src = '';
+                        if (app.state.currentObjectUrl) {
+                            URL.revokeObjectURL(app.state.currentObjectUrl);
+                            app.state.currentObjectUrl = null;
+                        }
+                        app.elements.customMusicLabel.classList.remove('selected');
+                        app.elements.customMusicLabel.textContent = 'ファイルを開く';
+                        localStorage.setItem('bgmSelection', 'none');
+                    }
+                },
+
+                setVolume(volume) {
+                    app.elements.audioPlayer.volume = volume;
+                    localStorage.setItem('audioVolume', volume);
+                },
+
+                loadVolume() {
+                    const savedVolume = localStorage.getItem('audioVolume');
+                    if (savedVolume) {
+                        app.elements.volumeSlider.value = savedVolume;
+                    }
+                    app.elements.audioPlayer.volume = app.elements.volumeSlider.value;
+                },
+
+                async loadPlaylistFromDB() {
+                    try {
+                        app.state.db = await app.db.init();
+                        const playlistData = await app.db.loadPlaylist();
+                        const savedBgmSelection = localStorage.getItem('bgmSelection');
+
+                        if (savedBgmSelection === 'custom' && playlistData?.files?.length > 0) {
+                            app.state.playlist = playlistData.files;
+                            app.state.currentTrackIndex = playlistData.index || 0;
+                            this.playTrack(app.state.currentTrackIndex, false);
+
+                            document.querySelector('#none').checked = false;
+                            app.elements.customMusicLabel.textContent = `プレイリスト (${app.state.playlist.length}曲)`;
+                            app.elements.customMusicLabel.classList.add('selected');
+                        } else {
+                            document.querySelector('#none').checked = true;
+                            this.updateBgmSource();
+                        }
+                    } catch (error) {
+                        console.error("プレイリストの読み込みに失敗:", error);
+                        document.querySelector('#none').checked = true;
+                        this.updateBgmSource();
+                    }
                 }
-            } catch (error) {
-                console.error("初期データの読み込みに失敗:", error);
-                document.querySelector('#none').checked = true;
-                updateBgmSource();
-            }
+            },
+            
+            ui: {
+                updateUI() {
+                    const today = app.utils.getCurrentDateString();
+                    const totalSecondsToday = app.state.studyHistory[today] || 0;
+                    app.elements.totalTimeDisplay.textContent = `本日の学習時間: ${app.utils.formatTotalTime(totalSecondsToday)}`;
+                    
+                    let historyHtml = '';
+                    for (let i = 1; i <= 5; i++) {
+                        const pastDate = new Date();
+                        pastDate.setDate(pastDate.getDate() - i);
+                        const dateString = app.utils.getCurrentDateString(pastDate);
+                        const totalSeconds = app.state.studyHistory[dateString] || 0;
+
+                        const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][pastDate.getDay()];
+                        const formattedDate = `${pastDate.getMonth() + 1}月${pastDate.getDate()}日(${dayOfWeek})`;
+                        historyHtml += `<div>${formattedDate}: ${app.utils.formatTotalTime(totalSeconds)}</div>`;
+                    }
+                    app.elements.pastHistoryDisplay.innerHTML = historyHtml;
+                },
+
+                toggleTimerDisplay() {
+                    const isVisible = app.elements.timerToggle.checked;
+                    app.elements.timerDisplay.style.display = isVisible ? 'block' : 'none';
+                    localStorage.setItem('timerDisplayVisible', isVisible);
+                },
+
+                loadTimerVisibility() {
+                    const savedTimerVisibility = localStorage.getItem('timerDisplayVisible');
+                    if (savedTimerVisibility !== null) {
+                        const isVisible = savedTimerVisibility === 'true';
+                        app.elements.timerToggle.checked = isVisible;
+                        app.elements.timerDisplay.style.display = isVisible ? 'block' : 'none';
+                    }
+                },
+                
+                showTemporaryMessage(element, message, originalText = null) {
+                    const prevText = originalText || element.textContent;
+                    element.textContent = message;
+                    element.classList.add('error');
+                    setTimeout(() => {
+                        element.textContent = prevText;
+                        element.classList.remove('error');
+                    }, 2500);
+                }
+            },
+
+            storage: {
+                loadHistory() {
+                    const savedHistory = localStorage.getItem('studyHistory');
+                    if (savedHistory) {
+                        app.state.studyHistory = JSON.parse(savedHistory);
+                        this.cleanupOldHistory();
+                    }
+                    app.ui.updateUI();
+                },
+                
+                calculateAndSaveStudyTime() {
+                    if (!app.state.sessionStartTime) return;
+
+                    let remainingSeconds = app.state.elapsedSeconds;
+                    let currentDate = new Date(app.state.sessionStartTime);
+
+                    while(remainingSeconds > 0) {
+                        const dateString = app.utils.getCurrentDateString(currentDate);
+                        const endOfCurrentDay = new Date(currentDate);
+                        endOfCurrentDay.setHours(24, 0, 0, -1);
+                        const secondsUntilEndOfDay = Math.floor((endOfCurrentDay - currentDate) / 1000) + 1;
+                        const secondsForThisDay = Math.min(remainingSeconds, secondsUntilEndOfDay);
+                        
+                        app.state.studyHistory[dateString] = (app.state.studyHistory[dateString] || 0) + secondsForThisDay;
+                        
+                        remainingSeconds -= secondsForThisDay;
+                        currentDate.setDate(currentDate.getDate() + 1);
+                        currentDate.setHours(0, 0, 0, 0);
+                    }
+                },
+                
+                saveHistoryToLocalStorage() {
+                    localStorage.setItem('studyHistory', JSON.stringify(app.state.studyHistory));
+                },
+                
+                cleanupOldHistory() {
+                    const sixDaysAgo = new Date();
+                    sixDaysAgo.setDate(sixDaysAgo.getDate() - 6);
+                    sixDaysAgo.setHours(0, 0, 0, 0);
+
+                    Object.keys(app.state.studyHistory).forEach(dateString => {
+                        if (new Date(dateString) < sixDaysAgo) {
+                            delete app.state.studyHistory[dateString];
+                        }
+                    });
+                    this.saveHistoryToLocalStorage();
+                },
+            },
+
+            system: {
+                async requestWakeLock() {
+                    if (!('wakeLock' in navigator)) return;
+                    try {
+                        app.state.wakeLock = await navigator.wakeLock.request('screen');
+                        app.state.wakeLock.addEventListener('release', () => {});
+                    } catch (err) {
+                        console.error(`Failed to acquire wake lock: ${err.name}, ${err.message}`);
+                    }
+                },
+
+                handleVisibilityChange() {
+                    if (app.state.isStudying && document.visibilityState === 'visible') {
+                        this.requestWakeLock();
+                    }
+                },
+            },
+            
+            db: {
+                init() {
+                    return new Promise((resolve, reject) => {
+                        const request = indexedDB.open(app.DB_NAME, app.DB_VERSION);
+                        request.onerror = () => reject("IndexedDBエラー: " + request.error);
+                        request.onsuccess = (event) => resolve(event.target.result);
+                        request.onupgradeneeded = (event) => {
+                            const db = event.target.result;
+                            if (!db.objectStoreNames.contains('playlist')) {
+                                db.createObjectStore('playlist', { keyPath: 'id' });
+                            }
+                        };
+                    });
+                },
+                savePlaylist(files, index) {
+                    return new Promise((resolve, reject) => {
+                        if (!app.state.db) return reject("DBが初期化されていません");
+                        const transaction = app.state.db.transaction(['playlist'], 'readwrite');
+                        const store = transaction.objectStore('playlist');
+                        const request = store.put({ id: 'lastPlaylist', files, index });
+                        request.onsuccess = () => resolve();
+                        request.onerror = () => reject("プレイリストの保存に失敗しました: " + request.error);
+                    });
+                },
+                loadPlaylist() {
+                    return new Promise((resolve, reject) => {
+                        if (!app.state.db) return reject("DBが初期化されていません");
+                        const transaction = app.state.db.transaction(['playlist'], 'readonly');
+                        const store = transaction.objectStore('playlist');
+                        const request = store.get('lastPlaylist');
+                        request.onsuccess = () => resolve(request.result);
+                        request.onerror = () => reject("プレイリストの読み込みに失敗しました: " + request.error);
+                    });
+                }
+            },
+
+            utils: {
+                formatTime(totalSeconds) {
+                    const h = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+                    const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+                    const s = (totalSeconds % 60).toString().padStart(2, '0');
+                    return `${h}:${m}:${s}`;
+                },
+                formatTotalTime(totalSeconds) {
+                    if (!totalSeconds) return '0分0秒';
+                    if (totalSeconds < 60) return `${totalSeconds}秒`;
+                    const h = Math.floor(totalSeconds / 3600);
+                    const m = Math.floor((totalSeconds % 3600) / 60);
+                    const s = totalSeconds % 60;
+                    let result = '';
+                    if (h > 0) result += `${h}時間`;
+                    if (m > 0) result += `${m}分`;
+                    if (s > 0 || (h === 0 && m === 0)) result += `${s}秒`;
+                    return result.trim();
+                },
+                getCurrentDateString(date = new Date()) {
+                    return date.toISOString().slice(0, 10);
+                },
+            },
         };
-        
-        // --- イベントリスナーの設定 ---
 
-        startStopButton.addEventListener('click', () => {
-            if (isStudying) {
-                stopStudy();
-            } else {
-                startStudy();
-            }
-        });
-
-        bgmRadios.forEach(radio => {
-            radio.addEventListener('change', updateBgmSource);
-        });
-        
-        customMusicInput.addEventListener('change', loadCustomMusic);
-
-        timerToggle.addEventListener('change', () => {
-            timerDisplay.style.display = timerToggle.checked ? 'block' : 'none';
-            localStorage.setItem('timerDisplayVisible', timerToggle.checked);
-        });
-
-        volumeSlider.addEventListener('input', (e) => setVolume(e.target.value));
-
-        audioPlayer.addEventListener('ended', playNextTrack);
-
-        window.addEventListener('beforeunload', (event) => {
-            if (isStudying) {
-                stopStudy();
-            }
-        });
-
-        // --- 初期化処理 ---
-        
-        window.addEventListener('load', loadInitialData);
-
+        window.addEventListener('load', () => app.init());
     </script>
 </body>
 </html>
