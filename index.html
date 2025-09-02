@@ -396,15 +396,6 @@
     <script>
         /**
          * アプリケーション全体を管理するオブジェクト
-         * @property {Object} elements - DOM要素のキャッシュ
-         * @property {Object} state - アプリケーションの状態
-         * @property {Object} timer - タイマー関連のメソッド
-         * @property {Object} music - 音楽関連のメソッド
-         * @property {Object} ui - UI関連のメソッド
-         * @property {Object} storage - データ永続化関連のメソッド
-         * @property {Object} system - WakeLockなどシステム関連のメソッド
-         * @property {Object} db - IndexedDB関連のメソッド
-         * @property {Object} utils - 汎用ヘルパー関数
          */
         const app = {
             // --- 定数 ---
@@ -425,9 +416,10 @@
                 playlist: [],
                 currentTrackIndex: 0,
                 lastCheckedDateString: null,
+                midnightsCrossed: 0, // 日付変更カウンター
                 wakeLock: null,
                 db: null,
-                currentObjectUrl: null, // 現在の音楽ファイルのURL
+                currentObjectUrl: null,
             },
 
             // --- 初期化 ---
@@ -490,6 +482,7 @@
                     app.state.isStudying = true;
                     app.state.sessionStartTime = new Date();
                     app.state.lastCheckedDateString = app.utils.getCurrentDateString();
+                    app.state.midnightsCrossed = 0; // セッション開始時にリセット
                     
                     app.elements.startStopButton.textContent = '学習終了';
                     app.elements.startStopButton.classList.add('studying');
@@ -504,21 +497,32 @@
                         const now = new Date();
                         app.state.elapsedSeconds = Math.floor((now - app.state.sessionStartTime) / 1000);
                         app.elements.timerDisplay.textContent = app.utils.formatTime(app.state.elapsedSeconds);
-
-                        const currentDateString = app.utils.getCurrentDateString(now);
-                        if (currentDateString !== app.state.lastCheckedDateString) {
-                            app.ui.updateUI();
-                            app.state.lastCheckedDateString = currentDateString;
-                        }
-                        
-                        if (app.state.elapsedSeconds >= app.SECONDS_IN_A_DAY * 2) {
-                            this.stopStudy();
-                        }
+                        this.handleRealtimeDateCheck();
                     }, 1000);
                 },
 
                 stopStudy() {
+                    if (!app.state.isStudying) return;
+
+                    // --- 最終日の学習時間を計算 ---
+                    const sessionEndTime = new Date();
+                    const lastDateString = app.state.lastCheckedDateString;
+                    
+                    // その日の開始時刻（午前0時）を取得
+                    const startOfLastDay = new Date(lastDateString);
+                    
+                    // 日付をまたいでいない場合はセッション開始時刻から、またいでいる場合は午前0時から計算
+                    const calculationStartTime = (app.state.midnightsCrossed > 0) ? startOfLastDay : app.state.sessionStartTime;
+                    
+                    const secondsOnLastDay = Math.round((sessionEndTime - calculationStartTime) / 1000);
+
+                    // 履歴に追加
+                    app.state.studyHistory[lastDateString] = (app.state.studyHistory[lastDateString] || 0) + secondsOnLastDay;
+
+                    // --- タイマー停止処理 ---
                     app.state.isStudying = false;
+                    clearInterval(app.state.timerInterval);
+
                     app.elements.startStopButton.textContent = '学習開始';
                     app.elements.startStopButton.classList.remove('studying');
 
@@ -527,17 +531,49 @@
                     }
 
                     app.elements.audioPlayer.pause();
-                    clearInterval(app.state.timerInterval);
                     
-                    app.storage.calculateAndSaveStudyTime();
-
                     app.state.elapsedSeconds = 0;
                     app.state.sessionStartTime = null;
                     app.elements.timerDisplay.textContent = '00:00:00';
                     
                     app.storage.saveHistoryToLocalStorage();
-                    app.ui.updateUI();
+                    app.ui.updateUI(); // 最終的なUI更新
                 },
+
+                handleRealtimeDateCheck() {
+                    const currentDateString = app.utils.getCurrentDateString();
+                    if (currentDateString === app.state.lastCheckedDateString) {
+                        return; // 日付が変わっていない場合は何もしない
+                    }
+
+                    // --- 日付変更時の処理 ---
+                    app.state.midnightsCrossed++;
+                    
+                    const previousDateString = app.state.lastCheckedDateString;
+                    const midnight = new Date(currentDateString); // 新しい日の午前0時
+
+                    if (app.state.midnightsCrossed === 1) {
+                        // 1回目の日付変更：前日の学習時間を確定
+                        const secondsOnFirstDay = Math.round((midnight - app.state.sessionStartTime) / 1000);
+                        app.state.studyHistory[previousDateString] = (app.state.studyHistory[previousDateString] || 0) + secondsOnFirstDay;
+                    } else {
+                        // 2回目以降の日付変更：中間の日の学習時間を24時間に確定
+                        const startOfPreviousDay = new Date(previousDateString);
+                        const secondsOnMiddleDay = Math.round((midnight - startOfPreviousDay) / 1000);
+                        app.state.studyHistory[previousDateString] = (app.state.studyHistory[previousDateString] || 0) + secondsOnMiddleDay;
+                    }
+                    
+                    app.storage.saveHistoryToLocalStorage();
+                    app.ui.updateUI(); // 履歴を即時反映
+
+                    // 48時間経過チェック
+                    if (app.state.midnightsCrossed >= 2) {
+                        this.stopStudy(); // 自動停止
+                        return;
+                    }
+
+                    app.state.lastCheckedDateString = currentDateString; // チェックした日付を更新
+                }
             },
 
             music: {
@@ -573,7 +609,6 @@
                     app.state.playlist = Array.from(files).filter(file => file.type.startsWith('audio/'));
                     
                     if (app.state.playlist.length === 0) {
-                        console.error('選択されたファイルに再生可能な音楽ファイルが見つかりませんでした。');
                         app.ui.showTemporaryMessage(app.elements.customMusicLabel, '音声なし', 'ファイルを開く');
                         return;
                     }
@@ -649,10 +684,12 @@
             
             ui: {
                 updateUI() {
+                    // 当日の合計時間を更新
                     const today = app.utils.getCurrentDateString();
                     const totalSecondsToday = app.state.studyHistory[today] || 0;
                     app.elements.totalTimeDisplay.textContent = `本日の学習時間: ${app.utils.formatTotalTime(totalSecondsToday)}`;
                     
+                    // 過去5日間の履歴を更新
                     let historyHtml = '';
                     for (let i = 1; i <= 5; i++) {
                         const pastDate = new Date();
@@ -701,27 +738,6 @@
                         this.cleanupOldHistory();
                     }
                     app.ui.updateUI();
-                },
-                
-                calculateAndSaveStudyTime() {
-                    if (!app.state.sessionStartTime) return;
-
-                    let remainingSeconds = app.state.elapsedSeconds;
-                    let currentDate = new Date(app.state.sessionStartTime);
-
-                    while(remainingSeconds > 0) {
-                        const dateString = app.utils.getCurrentDateString(currentDate);
-                        const endOfCurrentDay = new Date(currentDate);
-                        endOfCurrentDay.setHours(24, 0, 0, -1);
-                        const secondsUntilEndOfDay = Math.floor((endOfCurrentDay - currentDate) / 1000) + 1;
-                        const secondsForThisDay = Math.min(remainingSeconds, secondsUntilEndOfDay);
-                        
-                        app.state.studyHistory[dateString] = (app.state.studyHistory[dateString] || 0) + secondsForThisDay;
-                        
-                        remainingSeconds -= secondsForThisDay;
-                        currentDate.setDate(currentDate.getDate() + 1);
-                        currentDate.setHours(0, 0, 0, 0);
-                    }
                 },
                 
                 saveHistoryToLocalStorage() {
@@ -825,3 +841,5 @@
     </script>
 </body>
 </html>
+
+
