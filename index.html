@@ -413,8 +413,7 @@
                 autoSaveInterval: null, 
                 elapsedSeconds: 0,
                 sessionStartTime: null,
-                timeAlreadyOnStartDate: 0, 
-                timeAlreadyOnCurrentDay: 0,
+                timeAtSegmentStart: 0,
                 studyHistory: {}, // { "YYYY-MM-DD": seconds }
                 playlist: [],
                 currentTrackIndex: 0,
@@ -497,9 +496,7 @@
                     app.state.lastCheckedDateString = today;
                     app.state.midnightsCrossed = 0; 
                     
-                    const timeForToday = app.state.studyHistory[today] || 0;
-                    app.state.timeAlreadyOnStartDate = timeForToday;
-                    app.state.timeAlreadyOnCurrentDay = timeForToday;
+                    app.state.timeAtSegmentStart = app.state.studyHistory[today] || 0;
                     
                     app.elements.startStopButton.textContent = '学習終了';
                     app.elements.startStopButton.classList.add('studying');
@@ -534,15 +531,15 @@
                     const now = new Date();
                     const today = app.utils.getCurrentDateString(now);
 
-                    let sessionDurationOnThisDay;
+                    let sessionDuration;
                     if (app.state.midnightsCrossed === 0) {
-                        sessionDurationOnThisDay = Math.round((now - app.state.sessionStartTime) / 1000);
+                        sessionDuration = Math.round((now - app.state.sessionStartTime) / 1000);
                     } else {
-                        const startOfToday = new Date(today);
-                        sessionDurationOnThisDay = Math.round((now - startOfToday) / 1000);
+                        const startOfToday = new Date(today + 'T00:00:00');
+                        sessionDuration = Math.round((now - startOfToday) / 1000);
                     }
                     
-                    app.state.studyHistory[today] = app.state.timeAlreadyOnCurrentDay + sessionDurationOnThisDay;
+                    app.state.studyHistory[today] = app.state.timeAtSegmentStart + sessionDuration;
                     
                     app.storage.saveHistoryToLocalStorage();
                 },
@@ -579,22 +576,21 @@
                     }
 
                     const previousDateString = app.state.lastCheckedDateString;
-                    const midnight = new Date(currentDateString); 
+                    const midnight = new Date(currentDateString + 'T00:00:00'); 
 
-                    const startOfPreviousDay = (app.state.midnightsCrossed === 0) 
+                    const startOfPreviousDaySegment = (app.state.midnightsCrossed === 0) 
                         ? app.state.sessionStartTime 
-                        : new Date(previousDateString);
+                        : new Date(previousDateString + 'T00:00:00');
                         
-                    const secondsOnPreviousDay = Math.round((midnight - startOfPreviousDay) / 1000);
-                    const baseTimeForPreviousDay = (app.state.midnightsCrossed === 0) ? app.state.timeAlreadyOnStartDate : 0;
-                    app.state.studyHistory[previousDateString] = baseTimeForPreviousDay + secondsOnPreviousDay;
+                    const secondsOnPreviousDay = Math.round((midnight - startOfPreviousDaySegment) / 1000);
+                    app.state.studyHistory[previousDateString] = app.state.timeAtSegmentStart + secondsOnPreviousDay;
                     
                     app.state.midnightsCrossed++;
                     app.state.lastCheckedDateString = currentDateString;
-                    app.state.timeAlreadyOnCurrentDay = app.state.studyHistory[currentDateString] || 0;
+                    app.state.timeAtSegmentStart = app.state.studyHistory[currentDateString] || 0;
                     
                     if (app.state.midnightsCrossed >= 2) {
-                        app.state.studyHistory[currentDateString] = app.state.timeAlreadyOnCurrentDay;
+                        app.state.studyHistory[currentDateString] = app.state.timeAtSegmentStart;
                         this.resetTimerState(); 
                         
                         app.storage.saveHistoryToLocalStorage();
@@ -786,7 +782,7 @@
                     sixDaysAgo.setHours(0, 0, 0, 0);
 
                     Object.keys(app.state.studyHistory).forEach(dateString => {
-                        if (new Date(dateString) < sixDaysAgo) {
+                        if (new Date(dateString + 'T00:00:00') < sixDaysAgo) {
                             delete app.state.studyHistory[dateString];
                         }
                     });
@@ -891,3 +887,4 @@
     </script>
 </body>
 </html>
+
